@@ -3,6 +3,7 @@ import ssl
 import json
 import sqlite3
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 
 import paho.mqtt.client as mqtt
 
@@ -10,8 +11,9 @@ BROKER_HOST = "pontos.ri.se"
 BROKER_PORT = 443
 WS_PATH = "/mqtt"
 
+load_dotenv()
 USERNAME = "__token__"
-PASSWORD = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2wiOiIiLCJjb3VudHJ5IjoiU0UiLCJleHAiOjE3Nzk5MDU3ODEsImlhdCI6MTc3NzI3NjAzNSwiaXNzIjoicG9udG9zLWh1YiIsIm9yZ2FuaXNhdGlvbl90eXBlIjoicmVzZWFyY2hfaW5zdGl0dXRlIiwicHVycG9zZSI6Imlubm92YXRpb24iLCJyb2xlIjoid2ViX3VzZXIiLCJzdWIiOiJfX3Rva2VuX18ifQ.XzGLHYeTY1xnUslp5n0uMHyzdYBDhTnpah2h45D0qEU"
+PASSWORD = os.getenv("PONTOS_PASSWORD") # issued to public on https://pontos.ri.se/get_started
 
 MQTT_TOPICS = [
     ("PONTOS_EGRESS/imo_7932018/positioningsystem_longitude_deg/1", 0),
