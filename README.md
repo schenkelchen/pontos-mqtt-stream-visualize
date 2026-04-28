@@ -15,38 +15,38 @@ Together, the scripts form a simple pipeline:
 
 ## How it works
 
-### 1. MQTT ingestion
+### 1. MQTT ingestion[^1]
 
-The ingestion script uses `paho-mqtt` with WebSocket transport, TLS, and the broker endpoint `pontos.ri.se:443/mqtt`.[^1]
+The ingestion script uses `paho-mqtt` with WebSocket transport, TLS, and the broker endpoint `pontos.ri.se:443/mqtt`.
 
-It authenticates with username `__token__` and reads the password from the environment variable `PONTOS_PASSWORD` via `python-dotenv`.[^1]
+It authenticates with username `__token__` and reads the password from the environment variable `PONTOS_PASSWORD` via `python-dotenv`.
 
 For each incoming MQTT message, the script:
 
-- Decodes the payload as UTF-8 text.[^1]
-- Tries to parse the payload as JSON.[^1]
-- Extracts `value` and `timestamp`.[^1]
-- Converts the Unix timestamp to UTC ISO format.[^1]
-- Stores topic, payload, value, timestamps, QoS, and retain flag in SQLite.[^1]
+- Decodes the payload as UTF-8 text.
+- Tries to parse the payload as JSON.
+- Extracts `value` and `timestamp`.
+- Converts the Unix timestamp to UTC ISO format.
+- Stores topic, payload, value, timestamps, QoS, and retain flag in SQLite.
 
-### 2. Local storage
+### 2. Local storage[^1]
 
-On startup, the ingestion script recreates `pontos_mqtt.db`, enables WAL mode, and creates a table named `mqtt_messages` for the incoming records.[^1]
+On startup, the ingestion script recreates `pontos_mqtt.db`, enables WAL mode, and creates a table named `mqtt_messages` for the incoming records.
 
-This means the database is built fresh when the collector starts, which is useful for a clean local run but also means previous data is deleted on each restart.[^1]
+This means the database is built fresh when the collector starts, which is useful for a clean local run but also means previous data is deleted on each restart.
 
-### 3. Live visualization
+### 3. Live visualization[^2]
 
-The Streamlit app expects the local database file `pontos_mqtt.db` and reads from the `mqtt_messages` table.[^2]
+The Streamlit app expects the local database file `pontos_mqtt.db` and reads from the `mqtt_messages` table.
 
-It selects the newest latitude row and longitude row that share the same `payload_utc`, validates coordinate ranges, and shows the latest position on a map with an automatic refresh interval of 15 seconds.[^2]
+It selects the newest latitude row and longitude row that share the same `payload_utc`, validates coordinate ranges, and shows the latest position on a map with an automatic refresh interval of 15 seconds.
 
 ## File overview
 
 | File | Purpose |
 |------|---------|
-| `01d_pontos_mqtt_stream-to-sqlite.py` | Subscribes to MQTT topics and stores incoming vessel position messages in SQLite.[^1] |
-| `02d_streamlit_sqlite-to-live-map.py` | Reads the latest position from SQLite and shows it in a Streamlit live map.[^2] |
+| `01d_pontos_mqtt_stream-to-sqlite.py` | Subscribes to MQTT topics and stores incoming vessel position messages in SQLite. |
+| `02d_streamlit_sqlite-to-live-map.py` | Reads the latest position from SQLite and shows it in a Streamlit live map. |
 
 ## Run locally
 
@@ -116,12 +116,12 @@ To retrieve it:
 2. Follow the instructions on that page to obtain the public token/password.
 3. Put the retrieved value into your `.env` file as `PONTOS_PASSWORD=...`.[^1]
 
-## Notes
+## Notes[^2]
 
-- The Streamlit app uses `DB_PATH = "pontos_mqtt.db"`, so both scripts should be run from the same project folder unless the database path is adjusted in code.[^2]
-- The app is currently configured for table name `mqtt_messages`.[^2]
-- The map refresh interval is set to 15 seconds.[^2]
-- The vessel label shown in the UI is `Road traffic ferry 'ADA' (IMO 7932018)`.[^2]
+- The Streamlit app uses `DB_PATH = "pontos_mqtt.db"`, so both scripts should be run from the same project folder unless the database path is adjusted in code.
+- The app is currently configured for table name `mqtt_messages`.
+- The map refresh interval is set to 15 seconds.
+- The vessel label shown in the UI is `Road traffic ferry 'ADA' (IMO 7932018)`.
 
 ## Footnotes
 [^1]: 01d_pontos_mqtt_stream-to-sqlite.py (PONTOS broker connection)
