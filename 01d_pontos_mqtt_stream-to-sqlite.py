@@ -1,30 +1,41 @@
-import os
-import ssl
-import json
-import sqlite3
-from datetime import datetime, timezone
-from dotenv import load_dotenv
+"""Ingest live PONTOS MQTT vessel position messages into a local SQLite database.
 
+This module connects to the PONTOS broker over secure WebSockets, subscribes
+to the configured latitude and longitude topics, and stores each received
+message in a SQLite table for later visualization.
+"""
+
+import json
+import os
+import sqlite3
+import ssl
+from datetime import datetime, timezone
+
+from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
 
 BROKER_HOST = "pontos.ri.se"
 BROKER_PORT = 443
 WS_PATH = "/mqtt"
-
-load_dotenv()
 USERNAME = "__token__"
-PASSWORD = os.getenv("PONTOS_PASSWORD") # issued to public on https://pontos.ri.se/get_started
-
+DB_FILE = "pontos_mqtt.db"
 MQTT_TOPICS = [
     ("PONTOS_EGRESS/imo_7932018/positioningsystem_longitude_deg/1", 0),
     ("PONTOS_EGRESS/imo_7932018/positioningsystem_latitude_deg/1", 0),
 ]
 
-DB_FILE = "pontos_mqtt.db"
+load_dotenv()
+PASSWORD = os.getenv("PONTOS_PASSWORD")
 
 
-def init_db():
+def init_db() -> sqlite3.Connection:
+    """Create a fresh SQLite database and initialize the message table.
+
+    Returns:
+        sqlite3.Connection: Open connection to the initialized database.
+    """
     if os.path.exists(DB_FILE):
+        # Start with a clean local database on each run.
         os.remove(DB_FILE)
 
     conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=10)
@@ -34,8 +45,8 @@ def init_db():
     print(f"journal_mode = {mode}")
 
     cur.execute("PRAGMA synchronous=NORMAL;")
-
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE mqtt_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             received_at_utc TEXT NOT NULL,
@@ -47,24 +58,56 @@ def init_db():
             qos INTEGER,
             retain INTEGER
         )
-    """)
+        """
+    )
 
     conn.commit()
     return conn
 
 
-def unix_to_utc_text(unix_ts):
+def unix_to_utc_text(unix_ts: int | None) -> str | None:
+    """Convert a Unix timestamp to an ISO 8601 UTC string.
+
+    Args:
+        unix_ts: Unix timestamp in seconds.
+
+    Returns:
+        str | None: UTC timestamp as ISO 8601 text, or None if conversion fails.
+    """
     if unix_ts is None:
         return None
+
     try:
         return datetime.fromtimestamp(unix_ts, tz=timezone.utc).isoformat()
     except (ValueError, OSError, OverflowError, TypeError):
         return None
 
 
-def save_message(conn, topic, payload_text, value, payload_timestamp, payload_utc, qos, retain):
+def save_message(
+    conn: sqlite3.Connection,
+    topic: str,
+    payload_text: str,
+    value: float | None,
+    payload_timestamp: int | None,
+    payload_utc: str | None,
+    qos: int,
+    retain: bool,
+) -> None:
+    """Insert a received MQTT message into the SQLite database.
+
+    Args:
+        conn: Open SQLite connection.
+        topic: MQTT topic name.
+        payload_text: Raw decoded MQTT payload.
+        value: Parsed numeric value from the JSON payload, if available.
+        payload_timestamp: Parsed Unix timestamp from the payload, if available.
+        payload_utc: UTC timestamp converted from the payload timestamp.
+        qos: MQTT quality-of-service level.
+        retain: MQTT retain flag.
+    """
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO mqtt_messages (
             received_at_utc,
             topic,
@@ -76,26 +119,48 @@ def save_message(conn, topic, payload_text, value, payload_timestamp, payload_ut
             retain
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        datetime.now(timezone.utc).isoformat(),
-        topic,
-        payload_text,
-        value,
-        payload_timestamp,
-        payload_utc,
-        qos,
-        int(retain)
-    ))
+        """,
+        (
+            datetime.now(timezone.utc).isoformat(),
+            topic,
+            payload_text,
+            value,
+            payload_timestamp,
+            payload_utc,
+            qos,
+            int(retain),
+        ),
+    )
     conn.commit()
 
 
-def on_connect(client, userdata, flags, reason_code, properties=None):
+def on_connect(client, userdata, flags, reason_code, properties=None) -> None:
+    """Subscribe to the configured topics after the MQTT client connects.
+
+    Args:
+        client: MQTT client instance.
+        userdata: User-defined data passed to callbacks.
+        flags: Connection response flags.
+        reason_code: Broker connection result.
+        properties: MQTT v5 properties.
+    """
+    del flags, properties
+
     print(f"Connected with result code: {reason_code}")
     result, mid = client.subscribe(MQTT_TOPICS)
     print(f"Subscribe result={result}, mid={mid}")
 
 
-def on_message(client, userdata, msg):
+def on_message(client, userdata, msg) -> None:
+    """Parse and persist an incoming MQTT message.
+
+    Args:
+        client: MQTT client instance.
+        userdata: User-defined data passed to callbacks.
+        msg: MQTT message object.
+    """
+    del client
+
     payload_text = msg.payload.decode("utf-8", errors="replace")
 
     value = None
@@ -118,35 +183,46 @@ def on_message(client, userdata, msg):
         payload_timestamp,
         payload_utc,
         msg.qos,
-        msg.retain
+        msg.retain,
     )
 
     print(
         f"[{datetime.now(timezone.utc).isoformat()}] "
-        f"{msg.topic} -> value={value}, timestamp={payload_timestamp}, payload_utc={payload_utc}"
+        f"{msg.topic} -> value={value}, timestamp={payload_timestamp}, "
+        f"payload_utc={payload_utc}"
     )
 
 
-def on_disconnect(client, userdata, disconnect_flags, reason_code, properties=None):
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties=None) -> None:
+    """Log MQTT disconnection events.
+
+    Args:
+        client: MQTT client instance.
+        userdata: User-defined data passed to callbacks.
+        disconnect_flags: MQTT disconnect flags.
+        reason_code: Broker disconnect result.
+        properties: MQTT v5 properties.
+    """
+    del client, userdata, disconnect_flags, properties
     print(f"Disconnected: {reason_code}")
 
 
-def main():
+def main() -> None:
+    """Start the MQTT client and stream messages into SQLite."""
     db_conn = init_db()
 
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2,
         client_id="pontos_python_logger",
-        transport="websockets"
+        transport="websockets",
     )
 
     client.user_data_set({"db_conn": db_conn})
     client.username_pw_set(USERNAME, PASSWORD)
     client.ws_set_options(path=WS_PATH)
-
     client.tls_set(
         cert_reqs=ssl.CERT_REQUIRED,
-        tls_version=ssl.PROTOCOL_TLS_CLIENT
+        tls_version=ssl.PROTOCOL_TLS_CLIENT,
     )
     client.tls_insecure_set(False)
 
